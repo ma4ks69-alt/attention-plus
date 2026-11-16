@@ -1,4 +1,4 @@
-# Attention+ — Tanulás, fókuszálás és felhős szinkronizáció
+# Attention+  Tanulás, fókuszálás és felhős szinkronizáció
 
 Az Attention+ magyar nyelvű, Jetpack Compose-alapú Android-alkalmazás. A bejelentkezési és regisztrációs felület átlátszó logót használ. A főmenü illusztrált kártyái és a diplomás kalap megmaradtak. A **Tanulási napló** vonalas füzetként nyílik ki, önállóan hajló lapokkal, mentett eredményekkel és az eredeti tananyag ismételt áttekintésével.
 
