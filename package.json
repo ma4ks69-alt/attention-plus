@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "scripts": {
+    "test": "node --test test/firebase/*.test.js",
+    "test:rules": "firebase emulators:exec --project attentionplus-adef4 --only auth,firestore,storage,functions \"node --test test/firebase/*.test.js\""
+  },
+  "devDependencies": {
+    "firebase-tools": "15.36.0",
+    "@firebase/rules-unit-testing": "6.0.0",
+    "firebase": "13.3.0"
+  }
+}

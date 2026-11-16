@@ -199,8 +199,9 @@ internal fun FloatingStudySymbols(color: Color, modifier: Modifier = Modifier) {
             )
         }
     }
+    val reduced=LocalReducedMotion.current
     Canvas(modifier) {
-        val t = cycle.value
+        val t = if(reduced)0f else cycle.value
         val stroke = Stroke(2.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
         for (symbol in StudySymbols) {
             // Elliptical drift; the second axis is offset in phase, so symbols
@@ -405,26 +406,14 @@ internal fun DepthButton(
         spring(GlassMotion.DampingRatio, GlassMotion.Stiffness * 1.5f),
         label = "depth_button_press",
     )
-    val edge = lerp(color, Color.Black, 0.35f)
-    DimensionalCard(
-        face = Brush.verticalGradient(listOf(lerp(color, Color.White, 0.16f), color)),
-        edge = edge,
-        press = press,
-        depth = 5.dp,
-        shape = shape,
-        modifier = modifier
-            .graphicsLayer { alpha = if (enabled) 1f else 0.4f }
+    Box(
+        modifier.graphicsLayer { scaleX = 1f - press * 0.025f; scaleY = scaleX }
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (enabled) color else Color(0xFF393940))
             .clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text,
-            Modifier.align(Alignment.Center).padding(horizontal = 8.dp),
-            color = Color.White,
-            fontSize = fontSize,
-            lineHeight = fontSize * 1.1f,
-            fontWeight = FontWeight.ExtraBold,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            style = TextStyle(shadow = androidx.compose.ui.graphics.Shadow(edge.copy(alpha = 0.7f), Offset(0f, 3f), 6f)),
-        )
+        Text(text, Modifier.padding(12.dp), color = Color.White, fontSize = fontSize,
+            fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }

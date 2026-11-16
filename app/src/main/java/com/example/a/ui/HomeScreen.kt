@@ -50,12 +50,15 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
@@ -91,23 +94,19 @@ internal fun HomeScreen(
     modifier: Modifier = Modifier,
     playEntrance: Boolean = false,
     onEntranceStarted: () -> Unit = {},
+    onHistory: () -> Unit = {},
+    onInventory: () -> Unit = {},
+    onNotebookBounds: (androidx.compose.ui.geometry.Rect) -> Unit = {},
 ) {
-    // The host owns the session flag; this mounted scene keeps its own entrance
-    // even after claiming that flag, and subsequent mounts start fully emerged.
-    val entering = remember { playEntrance }
+    val reduced=LocalReducedMotion.current
+    val entering = remember { playEntrance && !reduced }
     val reveals = remember { List(4) { Animatable(if (entering) 0f else 1f) } }
     LaunchedEffect(Unit) {
         onEntranceStarted()
         if (entering) coroutineScope {
             reveals.forEachIndexed { index, reveal ->
                 launch {
-                    // Frame-clock timing keeps the stagger coordinated with the
-                    // springs and deterministic under the Compose test clock.
-                    if (index > 0) {
-                        val began = withFrameNanos { it }
-                        var now = began
-                        while (now - began < index * 55_000_000L) now = withFrameNanos { it }
-                    }
+                    kotlinx.coroutines.delay(index * 45L)
                     reveal.animateTo(1f, spring(0.9f, 700f))
                 }
             }
@@ -119,74 +118,46 @@ internal fun HomeScreen(
         infiniteRepeatable(tween(6000, easing = LinearEasing), RepeatMode.Restart),
         label = "home_hover_phase",
     )
-    val capImage = ImageBitmap.imageResource(R.drawable.graduation_cap)
-    val capPainter = remember(capImage) {
-        // The supplied PNG already contains alpha. Only exclude empty margins at
-        // display time; preserve the artwork and transparency byte for byte.
-        BitmapPainter(capImage, IntOffset(69, 116), IntSize(1188, 1058), FilterQuality.High)
-    }
-
     Column(
         modifier.testTag("home_page").verticalScroll(rememberScrollState())
-            .padding(start = 24.dp, end = 24.dp, bottom = 128.dp),
+            .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 128.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         BoxWithConstraints(Modifier.widthIn(max = 420.dp).fillMaxWidth()) {
             val cardWidth = (maxWidth - 36.dp) / 2f
-            val cardHeight = maxOf(160.dp, cardWidth * 1.08f)
+            val cardHeight = cardWidth * 1.08f
             val secondRow = 8.dp + cardHeight + 32.dp
-            val capWidth = minOf(280.dp, maxWidth * 0.82f)
-            val capHeight = capWidth * (240f / 280f)
-            val capTop = 8.dp + cardHeight * 2f + 32.dp + 24.dp
-            val capLeft = (maxWidth - capWidth) / 2f
-            val capBob = sin(phase) * 3f
-            // After 180-degree rotation the opening lies above/left of the cap's
-            // center. All four trajectories begin in that same physical opening.
-            val originX = capLeft + capWidth * 0.36f
-            val originY = capTop + capHeight * 0.36f + capBob.dp
             val lefts = listOf(0.dp, cardWidth + 36.dp, 0.dp, cardWidth + 36.dp)
             val tops = listOf(8.dp, 16.dp, secondRow + 5.dp, secondRow)
             val tilts = listOf(-6f, 5f, 4f, -7f)
             val tags = listOf("start_learning", "previous_sessions", "daily_challenge", "inventory")
-            Box(Modifier.fillMaxWidth().height(capTop + capHeight).testTag("home_scene")) {
+            Box(Modifier.fillMaxWidth().height(secondRow + cardHeight + 24.dp).testTag("home_scene")) {
                 repeat(4) { index ->
                     val progress = reveals[index].value.coerceIn(0f, 1f)
-                    val hover = sin(phase + index * 0.85f) * 1.8f
-                    Box(
-                        Modifier.offset(lefts[index], tops[index]).size(cardWidth, cardHeight)
-                            .testTag("home_slot_${tags[index]}"),
-                    ) {
-                        Box(
-                            Modifier.fillMaxSize().graphicsLayer {
-                                translationX = (originX - lefts[index] - cardWidth / 2f).toPx() * (1f - progress)
-                                translationY = (originY - tops[index] - cardHeight / 2f).toPx() * (1f - progress) + hover.dp.toPx() * progress
-                                scaleX = progress
-                                scaleY = progress
-                                rotationZ = tilts[index] * progress
-                            },
-                        ) {
+                    val hover = if(reduced) 0f else sin(phase + index * 0.85f) * 1.8f
+                    Box(Modifier.offset(lefts[index], tops[index]).size(cardWidth, cardHeight)
+                        .testTag("home_slot_${tags[index]}")) {
+                        Box(Modifier.fillMaxSize().graphicsLayer {
+                            translationY = ((1f - progress) * 16f + hover * progress).dp.toPx()
+                            scaleX = 0.94f + 0.06f * progress
+                            scaleY = scaleX
+                            rotationZ = tilts[index] * progress
+                        }) {
                             when (index) {
                                 0 -> StartLearningCard(onStartLearning, progress > 0.9f)
-                                1 -> PreviousSessionsCard()
+                                1 -> Box(Modifier.fillMaxSize().onGloballyPositioned { onNotebookBounds(it.boundsInRoot()) }) { PreviousSessionsCard(onStartLearning,onHistory) }
                                 2 -> DailyChallengeCard()
-                                else -> InventoryCard()
+                                else -> Box(Modifier.fillMaxSize().clickable(role=Role.Button,onClick=onInventory)) { InventoryCard() }
                             }
                         }
                     }
                 }
-                // The cap is drawn in front of the source positions, so cards
-                // physically emerge past its rim rather than fading beside it.
-                Box(
-                    Modifier.offset(capLeft, capTop).size(capWidth, capHeight)
-                        .graphicsLayer {
-                            rotationZ = 180f
-                            translationY = capBob.dp.toPx()
-                        },
-                ) {
-                    Image(capPainter, null, Modifier.fillMaxSize().testTag("graduation_cap"))
-                }
             }
         }
+        val cap = ImageBitmap.imageResource(R.drawable.graduation_cap)
+        Image(remember(cap) { BitmapPainter(cap, IntOffset(69,116), IntSize(1188,1058), FilterQuality.High) },
+            "Diplomás kalap", Modifier.widthIn(max=280.dp).fillMaxWidth().height(230.dp)
+                .graphicsLayer { rotationZ=180f; translationY=(if(reduced) 0f else sin(phase)*3f).dp.toPx() }.testTag("graduation_cap"))
     }
 }
 
@@ -205,12 +176,8 @@ private fun StartLearningCard(onStartLearning: () -> Unit, enabled: Boolean) {
         label = "start_learning_depth",
     )
     Box(Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale }) {
-        Box(
-            Modifier.matchParentSize().blur(16.dp, BlurredEdgeTreatment.Unbounded)
-                .background(StartGlow.copy(alpha = 0.3f), DimensionalCardShape),
-        )
         DimensionalCard(
-            face = Brush.verticalGradient(listOf(StartFaceTop, StartFaceBottom)),
+            face = SolidColor(StartFaceBottom),
             edge = StartEdge,
             press = press,
             modifier = Modifier.fillMaxSize().testTag("start_learning")
@@ -221,7 +188,7 @@ private fun StartLearningCard(onStartLearning: () -> Unit, enabled: Boolean) {
                 stringResource(R.string.start_learning),
                 Modifier.align(Alignment.Center).padding(12.dp),
                 color = InkColor, fontSize = 27.sp, lineHeight = 29.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center,
-                style = TextStyle(shadow = TextShadow(StartEdge.copy(alpha = 0.7f), Offset(0f, 3f), 6f)),
+
             )
         }
     }
@@ -229,13 +196,15 @@ private fun StartLearningCard(onStartLearning: () -> Unit, enabled: Boolean) {
 
 /** A stapled exercise book; its name label reads "Previous Sessions". */
 @Composable
-private fun PreviousSessionsCard() {
+private fun PreviousSessionsCard(onContinue: () -> Unit, onOpen: () -> Unit) {
+    val store = rememberLearningStore()
     DimensionalCard(
         face = SolidColor(BookCover),
         edge = BookPages,
         pageLines = true,
         gloss = false,
-        modifier = Modifier.fillMaxSize().testTag("previous_sessions"),
+        modifier = Modifier.fillMaxSize().testTag("previous_sessions")
+            .clickable(role = Role.Button, onClick = onOpen),
     ) {
         Row(Modifier.fillMaxSize()) {
             Canvas(Modifier.fillMaxHeight().width(14.dp)) {
@@ -268,14 +237,7 @@ private fun PreviousSessionsCard() {
                         fontSize = 16.sp, lineHeight = lineHeight, textAlign = TextAlign.Center, minLines = 2, maxLines = 2,
                     )
                 }
-                Spacer(Modifier.weight(1f))
-                // No resumable session exists yet; preserve the honest disabled action.
-                Text(
-                    stringResource(R.string.continue_session),
-                    Modifier.align(Alignment.End).testTag("continue_session")
-                        .clickable(enabled = false, role = Role.Button, onClick = {}).padding(vertical = 8.dp),
-                    color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp, fontWeight = FontWeight.Medium,
-                )
+
             }
         }
     }
@@ -288,7 +250,9 @@ private fun PreviousSessionsCard() {
  */
 @Composable
 private fun DailyChallengeCard() {
-    var flipped by rememberSaveable { mutableStateOf(false) }
+    val repository=com.example.a.data.AccountSession.repository
+    var flipped by rememberSaveable { mutableStateOf(repository?.record("preferences","app")?.optBoolean("challengeOpen") ?: false) }
+    val reduced=LocalReducedMotion.current
     val ringXs = listOf(0.27f, 0.73f)
     val pageState = stringResource(if (flipped) R.string.challenge_page_open else R.string.challenge_page_closed)
     BoxWithConstraints(
@@ -298,7 +262,7 @@ private fun DailyChallengeCard() {
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 role = Role.Button,
-                onClick = { flipped = !flipped },
+                onClick = { flipped = !flipped; repository?.write("preferences","app",org.json.JSONObject().put("challengeOpen",flipped)) },
             ),
     ) {
         val ringTop = 7.dp
@@ -308,7 +272,7 @@ private fun DailyChallengeCard() {
         val pageShape = RoundedCornerShape(bottomStart = 14.dp, bottomEnd = 14.dp)
         val density = LocalDensity.current
         val bodyDepth = with(density) { 10.dp.toPx() }
-        val sheet = remember(maxWidth, maxHeight, density) {
+        val sheet = remember(maxWidth, maxHeight, density, if(reduced)flipped else null) {
             with(density) {
                 PaperSheet(
                     hingeY = (ringTop + bindingHeight).toPx(),
@@ -403,13 +367,19 @@ private fun CalendarTitlePage(modifier: Modifier = Modifier) {
 
 @Composable
 private fun ChallengePage(modifier: Modifier = Modifier) {
+    val goal=LocalPreferences.current.optInt("dailyGoalMinutes",30)
+    val repository=com.example.a.data.AccountSession.repository
+    val revision=repository?.state?.collectAsState()?.value?.revision
+    val completed=remember(revision){repository?.challenges()?.any{it.optString("date")==java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString() && it.optBoolean("completed")} ?: false}
+    val history=remember(revision){repository?.learningState()?.optJSONArray("completed")}
+    val minutes=(0 until (history?.length() ?: 0)).map{history!!.getJSONObject(it)}.filter{it.optString("date")==java.time.LocalDate.now().toString()}.sumOf{it.optInt("durationSeconds")}/60
     Column(
         modifier.background(PaperColor).padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.SpaceEvenly,
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                stringResource(R.string.example_challenge),
+                if(repository==null) stringResource(R.string.example_challenge) else if(completed) "Teljesítve!" else "Fejezz be egy tanulást",
                 Modifier.weight(1f),
                 color = PencilInk, fontFamily = HandwrittenFont,
                 fontSize = 15.sp, lineHeight = 17.sp, maxLines = 3,
@@ -417,7 +387,7 @@ private fun ChallengePage(modifier: Modifier = Modifier) {
             Canvas(Modifier.size(24.dp)) { drawPencilCheckbox(Color(0xFF4A4440)) }
         }
         Text(
-            stringResource(R.string.challenge_reward),
+            "Mai cél: $minutes / $goal perc",
             color = Color(0xFF857A6D), fontFamily = HandwrittenFont, fontSize = 12.sp, maxLines = 1,
         )
     }
@@ -425,6 +395,9 @@ private fun ChallengePage(modifier: Modifier = Modifier) {
 
 @Composable
 private fun InventoryCard() {
+    val repository=com.example.a.data.AccountSession.repository
+    val revision=repository?.state?.collectAsState()?.value?.revision
+    val items=remember(revision){repository?.inventory().orEmpty()}
     DimensionalCard(
         face = SolidColor(ChestGold),
         edge = ChestEdge,
@@ -456,7 +429,7 @@ private fun InventoryCard() {
                 color = InkColor, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold,
             )
             Text(
-                stringResource(R.string.no_items_yet),
+                if(items.isEmpty()) stringResource(R.string.no_items_yet) else items.take(3).joinToString(" · "){when(it.optString("id")){"xp_potion"->"Bájital";"streak_freeze"->"Jégkristály";else->"Tárgy"}+" ×"+it.optInt("count")},
                 Modifier.align(Alignment.Center).padding(top = lid * 0.6f),
                 color = Color(0xFFF6DDBE), fontSize = 12.sp,
             )
@@ -478,12 +451,13 @@ private fun InventoryPreviews(
         animationSpec = infiniteRepeatable(tween(6000, easing = LinearEasing), RepeatMode.Restart),
         label = "inventory_slot_phase",
     )
+    val reduced=LocalReducedMotion.current
     Canvas(modifier.testTag("inventory_previews").blur(0.8.dp)) {
         val slot = 36.dp.toPx()
         val pitch = 50.dp.toPx()
         var y = -pitch / 2f
         while (y < size.height) {
-            var x = -pitch + phase * pitch
+            var x = -pitch + (if(reduced) 0f else phase) * pitch
             while (x < size.width) {
                 drawRoundRect(fill, Offset(x, y), Size(slot, slot), CornerRadius(3.dp.toPx()))
                 drawRoundRect(stroke, Offset(x, y), Size(slot, slot), CornerRadius(3.dp.toPx()), style = Stroke(0.8.dp.toPx()))
@@ -492,4 +466,10 @@ private fun InventoryPreviews(
             y += pitch
         }
     }
+}
+
+@Composable
+private fun rememberLearningStore(): LearningStore {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    return remember(context) { LearningStore(context) }
 }

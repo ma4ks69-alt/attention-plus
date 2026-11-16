@@ -24,6 +24,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,12 +61,13 @@ internal data class ProfileSummary(
     val allTimePoints: Int,
     val streakDays: Int,
     val subjects: List<ProfileSubject>,
+    val photo: String = "",
 )
 
-// No user account/history exists yet. These are explicitly empty, replaceable UI data.
+// Empty preview/isolated-test data; production receives the current account projection.
 private val EmptyProfile = ProfileSummary(
-    "Username", "@handle", 0, 0,
-    listOf(ProfileSubject("1", "Subject 1"), ProfileSubject("2", "Subject 2"), ProfileSubject("3", "Subject 3")),
+    "Felhasználó", "", 0, 0,
+    listOf(ProfileSubject("1", "Matematika"), ProfileSubject("2", "Irodalom"), ProfileSubject("3", "Angol")),
 )
 
 @Composable
@@ -72,8 +75,14 @@ internal fun ProfileScreen(
     modifier: Modifier = Modifier,
     profile: ProfileSummary = EmptyProfile,
 ) {
-    var selectedId by rememberSaveable { mutableStateOf(profile.subjects.firstOrNull()?.id) }
+    val repository=com.example.a.data.AccountSession.repository
+    var selectedId by rememberSaveable { mutableStateOf(repository?.record("preferences","app")?.optString("profileSubject")?.takeIf { it.isNotEmpty() } ?: profile.subjects.firstOrNull()?.id) }
     var dropdownOpen by rememberSaveable { mutableStateOf(false) }
+    val sync=repository?.state?.collectAsState()?.value
+    LaunchedEffect(sync?.revision) {
+        val saved=repository?.record("preferences","app")?.optString("profileSubject")
+        if(!saved.isNullOrBlank() && profile.subjects.any{it.id==saved}) selectedId=saved
+    }
     val subject = profile.subjects.find { it.id == selectedId } ?: profile.subjects.firstOrNull()
     Column(
         modifier.testTag("profile_page").verticalScroll(rememberScrollState())
@@ -88,7 +97,7 @@ internal fun ProfileScreen(
                     Modifier.size(88.dp).border(1.5.dp, Color.White.copy(alpha = 0.7f), CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(painterResource(R.drawable.ic_profile), stringResource(R.string.profile_picture), Modifier.size(40.dp), tint = SecondaryInkColor)
+                    AccountAvatar(profile.photo,Modifier.size(80.dp))
                 }
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
@@ -101,6 +110,7 @@ internal fun ProfileScreen(
                     }
                 }
             }
+            ProfileAccountActions()
             Spacer(Modifier.height(32.dp))
             Column(
                 Modifier.fillMaxWidth().testTag("subject_summary"),
@@ -126,7 +136,7 @@ internal fun ProfileScreen(
                                 DropdownMenuItem(
                                     text = { Text(item.name, color = InkColor) },
                                     modifier = Modifier.testTag("subject_option_${item.id}"),
-                                    onClick = { selectedId = item.id; dropdownOpen = false },
+                                    onClick = { selectedId = item.id; dropdownOpen = false; repository?.write("preferences","app",org.json.JSONObject().put("profileSubject",item.id)) },
                                 )
                             }
                         }

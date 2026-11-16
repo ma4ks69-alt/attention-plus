@@ -30,6 +30,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -86,18 +88,19 @@ internal fun FocusScreen(
     onStart: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val reduced=LocalReducedMotion.current
     // Pop: small to full size over one second, then the glow and controls begin.
     val pop = remember { Animatable(0f) }
     var popped by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        pop.animateTo(1f, tween(1000, easing = FastOutSlowInEasing))
+        pop.animateTo(1f, tween(if(reduced)0 else 1000, easing = FastOutSlowInEasing))
         popped = true
     }
     val ready = popped && !running
-    val controls by animateFloatAsState(if (ready) 1f else 0f, tween(if (running) 450 else 700), label = "focus_controls")
+    val controls by animateFloatAsState(if (ready) 1f else 0f, tween(if(reduced)0 else if (running) 450 else 700), label = "focus_controls")
     val glow by animateFloatAsState(
         if (ready) 1f else 0f,
-        tween(if (running) 1400 else 1000),
+        tween(if(reduced)0 else if (running) 1400 else 1000),
         label = "focus_glow",
     )
     val pulse = rememberInfiniteTransition(label = "focus_glow_pulse")
@@ -116,7 +119,7 @@ internal fun FocusScreen(
                 seconds = if (running) displaySeconds else setSeconds,
                 digitColor = FocusDigit,
                 accent = FocusPurple,
-                glow = glow,
+                glow = 0f,
                 controls = controls,
                 enabled = ready,
                 onChange = onSetSecondsChange,
@@ -126,24 +129,6 @@ internal fun FocusScreen(
                     scaleX = scale
                     scaleY = scale
                     alpha = (pop.value * 3f).coerceAtMost(1f)
-                }.drawBehind {
-                    // Faint halo around the digits, breathing gently: a circular
-                    // gradient squashed into a soft ellipse, fading fully to clear.
-                    val strength = glow * breathing.value
-                    if (strength > 0f) {
-                        val radius = size.width * 0.62f
-                        scale(1f, 0.6f, pivot = center) {
-                            drawCircle(
-                                Brush.radialGradient(
-                                    listOf(FocusPurple.copy(alpha = 0.3f * strength), Color.Transparent),
-                                    center = center,
-                                    radius = radius,
-                                ),
-                                radius = radius,
-                                center = center,
-                            )
-                        }
-                    }
                 },
             )
             Spacer(Modifier.height(36.dp))
@@ -153,7 +138,7 @@ internal fun FocusScreen(
                 enabled = ready && setSeconds > 0,
                 onClick = onStart,
                 modifier = Modifier.graphicsLayer { alpha = controls }
-                    .width(176.dp).height(60.dp).testTag("focus_start"),
+                    .fillMaxWidth().padding(horizontal = 24.dp).height(60.dp).testTag("focus_start"),
             )
         }
     }
@@ -222,6 +207,7 @@ private fun TimerDigit(
     tagPrefix: String,
     onStep: (Int) -> Unit,
 ) {
+    val reduced=LocalReducedMotion.current
     val stepPx = with(LocalDensity.current) { 30.dp.toPx() }
     var drag by remember { mutableFloatStateOf(0f) }
     var lastStep by remember { mutableIntStateOf(1) }
@@ -255,8 +241,8 @@ private fun TimerDigit(
                 targetState = value,
                 transitionSpec = {
                     val dir = lastStep
-                    (slideInVertically(tween(180)) { it * dir / 2 } + fadeIn(tween(180))) togetherWith
-                        (slideOutVertically(tween(180)) { -it * dir / 2 } + fadeOut(tween(180)))
+                    (slideInVertically(tween(if(reduced)0 else 180)) { it * dir / 2 } + fadeIn(tween(if(reduced)0 else 180))) togetherWith
+                        (slideOutVertically(tween(if(reduced)0 else 180)) { -it * dir / 2 } + fadeOut(tween(if(reduced)0 else 180)))
                 },
                 label = "focus_digit_roll",
             ) { digit ->
@@ -299,18 +285,7 @@ private fun TimerArrow(up: Boolean, color: Color, alpha: Float, enabled: Boolean
 /** The faint purple Exit link shown top-left once a session has run for five seconds. */
 @Composable
 internal fun FocusExit(visible: Boolean, onExit: () -> Unit, modifier: Modifier = Modifier) {
-    val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(900), label = "focus_exit")
-    if (alpha > 0f) {
-        Text(
-            stringResource(R.string.focus_exit),
-            modifier.graphicsLayer { this.alpha = alpha }
-                .testTag("focus_exit")
-                .clickable(enabled = visible, role = Role.Button, onClick = onExit),
-            color = FocusPurple.copy(alpha = 0.6f),
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Medium,
-        )
-    }
+    if(visible)BackButton(onExit,modifier,background=FocusBlack,color=FocusPurple,tag="focus_exit")
 }
 
 /**

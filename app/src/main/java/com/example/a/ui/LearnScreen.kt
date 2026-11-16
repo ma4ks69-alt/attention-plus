@@ -37,6 +37,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +63,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -69,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.example.a.R
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -94,33 +99,61 @@ private const val NotesStep = 2
 @Composable
 internal fun LearnScreen(
     onStartSession: (Int) -> Unit,
+    onBack: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    var step by rememberSaveable { mutableIntStateOf(SubjectStep) }
-    var subject by rememberSaveable { mutableStateOf<Subject?>(null) }
-    var seconds by rememberSaveable { mutableIntStateOf(0) }
+    val repository=com.example.a.data.AccountSession.repository
+    val draft=androidx.compose.runtime.remember { repository?.record("drafts","learning") ?: org.json.JSONObject() }
+    val scope=androidx.compose.runtime.rememberCoroutineScope()
+    var importError by rememberSaveable { mutableStateOf<String?>(null) }
+    var step by rememberSaveable { mutableIntStateOf(draft.optInt("step",SubjectStep)) }
+    var subject by rememberSaveable { mutableStateOf<Subject?>(Subject.entries.find { it.name==draft.optString("subject") }) }
+    var seconds by rememberSaveable { mutableIntStateOf(draft.optInt("seconds",(repository?.record("preferences","app")?.optInt("defaultStudyMinutes",25) ?: 25)*60)) }
     // Photo URIs, newline separated so the list survives recreation.
-    var photos by rememberSaveable { mutableStateOf("") }
-    var pastedText by rememberSaveable { mutableStateOf("") }
-    BackHandler(enabled = step > SubjectStep) { step-- }
+    var photos by rememberSaveable { mutableStateOf(draft.optString("photos")) }
+    var pastedText by rememberSaveable { mutableStateOf(draft.optString("text")) }
+    val sync=repository?.state?.collectAsState()?.value
+    LaunchedEffect(sync?.revision) {
+        val saved=repository?.record("drafts","learning") ?: return@LaunchedEffect
+        if(saved.has("step")) step=saved.optInt("step").coerceIn(SubjectStep,NotesStep)
+        if(saved.has("subject")) subject=Subject.entries.find { it.name==saved.optString("subject") }
+        if(saved.has("seconds")) seconds=saved.optInt("seconds")
+        if(saved.has("photos")) photos=saved.optString("photos")
+        if(saved.has("text")) pastedText=saved.optString("text")
+    }
+    fun saveDraft(vararg fields: String) {
+        val all=org.json.JSONObject().put("step",step).put("subject",subject?.name ?: "History").put("seconds",seconds).put("photos",photos).put("text",pastedText.take(50000))
+        val patch=org.json.JSONObject(); fields.forEach { patch.put(it,all.get(it)) }; repository?.write("drafts","learning",patch)
+    }
+    if(importError!=null) AlertDialog(onDismissRequest={importError=null},title={Text("A kép mentése nem sikerült")},text={Text(importError!!)},confirmButton={TextButton(onClick={importError=null}){Text("Rendben")}})
+    BackHandler(enabled = step > SubjectStep) { step--; saveDraft("step") }
 
-    Crossfade(step, modifier.testTag("learn_page"), animationSpec = tween(220), label = "learn_step") { shown ->
+    Crossfade(step, modifier.testTag("learn_page"), animationSpec = tween(if(LocalReducedMotion.current)0 else 220), label = "learn_step") { shown ->
         when (shown) {
-            SubjectStep -> SubjectStepPage(onSelect = {
+            SubjectStep -> SubjectStepPage(onBack = onBack, onSelect = {
                 subject = it
-                step = TimeStep
+                step = TimeStep; saveDraft("subject","step")
             })
             TimeStep -> TimeStepPage(
+                onBack={step--;saveDraft("step")},
                 subject = subject,
                 seconds = seconds,
-                onSecondsChange = { seconds = it },
-                onNext = { step = NotesStep },
+                onSecondsChange = { seconds = it; saveDraft("seconds") },
+                onNext = { step = NotesStep; saveDraft("step") },
             )
             else -> NotesStepPage(
+                onBack={step--;saveDraft("step")},
                 photos = photos.split('\n').filter { it.isNotEmpty() },
                 pastedText = pastedText,
-                onPhotosAdded = { added -> photos = (photos.split('\n') + added.map(Uri::toString)).filter { it.isNotEmpty() }.joinToString("\n") },
-                onTextPasted = { pastedText = it },
+                onPhotosAdded = { added ->
+                    scope.launch {
+                        try {
+                            val stored=added.map { repository?.importImage(it) ?: it.toString() }
+                            photos=(photos.split('\n')+stored).filter{it.isNotEmpty()}.take(10).joinToString("\n"); saveDraft("photos")
+                        } catch(e: Exception) { importError="A kép nem menthető. Ellenőrizd a fájlt és a szabad tárhelyet." }
+                    }
+                },
+                onTextPasted = { pastedText = it.take(50000); saveDraft("text") },
                 onStart = { onStartSession(seconds) },
             )
         }
@@ -137,77 +170,39 @@ private fun LearnTitle(text: String) {
         fontSize = 28.sp,
         fontWeight = FontWeight.ExtraBold,
         textAlign = TextAlign.Center,
-        style = TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.55f), Offset(0f, 4f), 6f)),
+
     )
 }
 
 @Composable
-private fun SubjectStepPage(onSelect: (Subject) -> Unit) {
+private fun SubjectStepPage(onBack: () -> Unit, onSelect: (Subject) -> Unit) {
     Box(Modifier.fillMaxSize()) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 180.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            LearnTitle(stringResource(R.string.learn_select_subject))
-            Spacer(Modifier.height(36.dp))
-            BoxWithConstraints(Modifier.widthIn(max = 380.dp).fillMaxWidth()) {
-                val gap = 18.dp
-                val tile = (maxWidth - gap * 2) / 3
-                Column(verticalArrangement = Arrangement.spacedBy(gap + 6.dp)) {
-                    Subject.entries.chunked(3).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
-                            row.forEach { item ->
-                                DepthButton(
-                                    text = stringResource(item.label),
-                                    color = item.color,
-                                    onClick = { onSelect(item) },
-                                    shape = RoundedCornerShape(18.dp),
-                                    fontSize = 15.sp,
-                                    modifier = Modifier.size(tile).testTag("learn_subject_${item.name.lowercase()}"),
-                                )
-                            }
-                        }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                BackButton(onBack,tag="learn_back")
+                Text(stringResource(R.string.learn_select_subject), Modifier.weight(1f), color = InkColor,
+                    fontSize = 25.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
+                Spacer(Modifier.width(48.dp))
+            }
+            Spacer(Modifier.height(20.dp))
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Subject.entries.chunked(2).forEach { subjects ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        subjects.forEach { item -> SubjectCard(item, { onSelect(item) }, Modifier.weight(1f)) }
                     }
                 }
             }
-        }
-        PreviousSessionsLink(
-            Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 120.dp),
-        )
-    }
-}
 
-/** Bold cartoon link with a chunky arrow. The Previous Sessions page is not built yet. */
-@Composable
-private fun PreviousSessionsLink(modifier: Modifier = Modifier) {
-    val shadow = Shadow(Color.Black.copy(alpha = 0.55f), Offset(0f, 3f), 5f)
-    Row(
-        modifier.testTag("learn_previous_sessions")
-            .clickable(role = Role.Button, onClick = {})
-            .padding(vertical = 8.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            stringResource(R.string.previous_sessions),
-            color = InkColor, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold,
-            style = TextStyle(shadow = shadow),
-        )
-        Spacer(Modifier.width(8.dp))
-        Canvas(Modifier.size(width = 24.dp, height = 18.dp)) {
-            val stroke = 3.4.dp.toPx()
-            val y = size.height / 2f
-            val tip = Offset(size.width - stroke / 2f, y)
-            for ((color, dy) in listOf(Color.Black.copy(alpha = 0.4f) to 1.5.dp.toPx(), InkColor to 0f)) {
-                drawLine(color, Offset(stroke / 2f, y + dy), tip.copy(y = tip.y + dy), stroke, StrokeCap.Round)
-                drawLine(color, Offset(size.width * 0.58f, stroke / 2f + dy), tip.copy(y = tip.y + dy), stroke, StrokeCap.Round)
-                drawLine(color, Offset(size.width * 0.58f, size.height - stroke / 2f + dy), tip.copy(y = tip.y + dy), stroke, StrokeCap.Round)
-            }
         }
     }
 }
 
 @Composable
 private fun TimeStepPage(
+    onBack:()->Unit,
     subject: Subject?,
     seconds: Int,
     onSecondsChange: (Int) -> Unit,
@@ -217,7 +212,7 @@ private fun TimeStepPage(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 140.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        LearnTitle(stringResource(R.string.learn_select_time))
+        PageHeading(stringResource(R.string.learn_select_time),onBack)
         if (subject != null) {
             Spacer(Modifier.height(6.dp))
             Text(stringResource(subject.label), color = subject.color, fontSize = 17.sp, fontWeight = FontWeight.Bold)
@@ -240,13 +235,14 @@ private fun TimeStepPage(
             onClick = onNext,
             enabled = seconds > 0,
             shape = CircleShape,
-            modifier = Modifier.size(100.dp).testTag("learn_next"),
+            modifier = Modifier.fillMaxWidth().height(60.dp).testTag("learn_next"),
         )
     }
 }
 
 @Composable
 private fun NotesStepPage(
+    onBack:()->Unit,
     photos: List<String>,
     pastedText: String,
     onPhotosAdded: (List<Uri>) -> Unit,
@@ -271,7 +267,7 @@ private fun NotesStepPage(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 140.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        LearnTitle(stringResource(R.string.learn_upload_notes))
+        PageHeading(stringResource(R.string.learn_upload_notes),onBack)
         Spacer(Modifier.height(32.dp))
         Row(
             Modifier.background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
@@ -293,7 +289,7 @@ private fun NotesStepPage(
         if (photos.isNotEmpty()) {
             Spacer(Modifier.height(24.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                photos.take(4).forEach { NoteThumbnail(Uri.parse(it)) }
+                photos.take(4).forEach { if(it.startsWith("users/")) AccountImage(it,Modifier.size(64.dp).clip(RoundedCornerShape(12.dp))) else NoteThumbnail(Uri.parse(it)) }
                 if (photos.size > 4) {
                     Text("+${photos.size - 4}", color = SecondaryInkColor, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 }
@@ -318,14 +314,14 @@ private fun NotesStepPage(
             onClick = onStart,
             enabled = hasNotes,
             shape = CircleShape,
-            modifier = Modifier.size(100.dp).testTag("learn_start"),
+            modifier = Modifier.fillMaxWidth().height(60.dp).testTag("learn_start"),
         )
     }
 
     if (choosing) {
         AlertDialog(
             onDismissRequest = { choosing = false },
-            title = { Text(stringResource(R.string.learn_add_photos)) },
+            title = { PageHeading(stringResource(R.string.learn_add_photos),{choosing=false}) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     DepthButton(
@@ -344,7 +340,7 @@ private fun NotesStepPage(
                         fontSize = 16.sp,
                         onClick = {
                             choosing = false
-                            val dir = File(context.cacheDir, "notes").apply { mkdirs() }
+                            val dir = File(context.filesDir, "camera/${com.example.a.data.AccountSession.repository?.uid ?: "local"}").apply { mkdirs() }
                             val file = File.createTempFile("note_", ".jpg", dir)
                             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
                             pendingPhoto = uri.toString()
@@ -369,7 +365,7 @@ private fun NotesStepPage(
         }
         AlertDialog(
             onDismissRequest = { pasting = false },
-            title = { Text(stringResource(R.string.learn_paste_text)) },
+            title = { PageHeading(stringResource(R.string.learn_paste_text),{pasting=false}) },
             text = {
                 OutlinedTextField(
                     value = draft,
@@ -491,9 +487,10 @@ internal fun LearnSession(
                     text = stringResource(if (paused) R.string.learn_resume else R.string.learn_stop),
                     color = AccentColor,
                     onClick = onStopToggle,
+                    enabled = seconds > 0,
                     shape = CircleShape,
                     fontSize = 18.sp,
-                    modifier = Modifier.size(100.dp).testTag("session_stop"),
+                    modifier = Modifier.width(140.dp).height(60.dp).testTag("session_stop"),
                 )
                 DepthButton(
                     text = stringResource(R.string.learn_finish),
@@ -501,7 +498,7 @@ internal fun LearnSession(
                     onClick = onFinish,
                     shape = CircleShape,
                     fontSize = 18.sp,
-                    modifier = Modifier.size(100.dp).testTag("session_finish"),
+                    modifier = Modifier.width(140.dp).height(60.dp).testTag("session_finish"),
                 )
             }
         }

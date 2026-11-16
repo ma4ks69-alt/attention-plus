@@ -17,7 +17,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
         setContent {
-            APlusTheme { APlusScreen() }
+            APlusTheme { com.example.a.auth.AccountGate() }
         }
     }
 }

@@ -18,3 +18,8 @@ local.properties
 .kotlin
 /app/debug
 /app/release
+
+node_modules/
+.firebase/
+*-debug.log
+functions/.env*

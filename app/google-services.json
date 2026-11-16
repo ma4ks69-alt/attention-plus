@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "708624006343",
+    "project_id": "attentionplus-adef4",
+    "storage_bucket": "attentionplus-adef4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:708624006343:android:cbf7e096d287aaeb6b92e2",
+        "android_client_info": {
+          "package_name": "com.dattila.attentionplus"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "708624006343-gt7q37nmd6s9e9fhfkdbv00gs5utd99r.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.dattila.attentionplus",
+            "certificate_hash": "4637bd3b0c5738868f4e58b0b10c6c2f57b892d7"
+          }
+        },
+        {
+          "client_id": "708624006343-sn6usu2n4a92j54as6f7knpuu9bdn9i0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDhmsqPos1i8Z6_26OWyhF314tg6tQnadY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "708624006343-sn6usu2n4a92j54as6f7knpuu9bdn9i0.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

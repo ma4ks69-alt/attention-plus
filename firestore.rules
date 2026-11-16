@@ -1,0 +1,53 @@
+rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+  function owner(uid) { return request.auth != null && request.auth.uid == uid && (!exists(/databases/$(database)/documents/users/$(uid)) || !get(/databases/$(database)/documents/users/$(uid)).data.get('deleting',false)); }
+  match /users/{uid}/profile/{id} {
+   allow read: if owner(uid);
+   function valid() {
+    let d=request.resource.data;
+    return id=='main' && d.keys().hasOnly(['email','displayName','photo','birthday','username','createdAt'])
+     && d.email is string && d.email.size()<=254 && d.displayName is string && d.displayName.size()>0 && d.displayName.size()<=254
+     && d.photo is string && d.photo.size()<=2048 && d.birthday is string && d.birthday.size()<=10
+     && (d.birthday=='' || d.birthday.matches('[12][0-9]{3}-[01][0-9]-[0-3][0-9]'))
+     && (d.photo=='' || d.photo.matches('users/'+uid+'/media/[a-f0-9-]{36}') || d.photo.matches('https://([a-zA-Z0-9-]+[.])*googleusercontent[.]com/.*'));
+   }
+   allow create: if owner(uid) && valid() && request.resource.data.email==request.auth.token.email && request.resource.data.username=='' && request.resource.data.createdAt==request.time;
+   allow update: if owner(uid) && valid() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['username','createdAt']) && request.resource.data.email==request.auth.token.email;
+  }
+  match /users/{uid}/changes/{id} {
+   allow read: if owner(uid);
+   allow create: if owner(uid) && request.resource.data.keys().hasOnly(['id','bucket','entity','clock','patch'])
+    && request.resource.data.id==id && id.matches('[a-f0-9-]{36}')
+    && request.resource.data.bucket in ['sessions','drafts','focus','preferences','challenges']
+    && request.resource.data.entity.matches('[A-Za-z0-9_-]{1,100}')
+    && request.resource.data.clock is int && request.resource.data.clock>0
+    && request.resource.data.patch is map && request.resource.data.patch.size()<=40;
+   // A byte-identical retry is harmless; changing an accepted revision is forbidden.
+   allow update: if owner(uid) && request.resource.data==resource.data;
+  }
+  match /users/{uid}/completions/{id} {
+   allow read: if owner(uid);
+   allow create: if owner(uid) && id.matches('[a-f0-9-]{36}')
+    && request.resource.data.keys().hasOnly(['kind','subject','startedAt','finishedAt','durationSeconds','answers','quizVersion'])
+    && request.resource.data.kind in ['study','focus']
+    && request.resource.data.subject in ['Math','Literature','English','Biology','Science','ForeignLanguage','History','Focus']
+    && request.resource.data.startedAt is int && request.resource.data.finishedAt is int
+    && request.resource.data.durationSeconds is int && request.resource.data.durationSeconds>=0 && request.resource.data.durationSeconds<=86400
+    && request.resource.data.answers is list && request.resource.data.answers.size()<=10
+    && request.resource.data.quizVersion=='history-v1';
+   allow update: if owner(uid) && request.resource.data==resource.data;
+  }
+  match /users/{uid}/legacy/{id} {
+   allow read: if owner(uid);
+   allow create: if owner(uid) && request.resource.data.keys().hasOnly(['source','json'])
+    && request.resource.data.source=='local-v1' && request.resource.data.json is string && request.resource.data.json.size()<900000;
+   allow update: if owner(uid) && request.resource.data==resource.data;
+  }
+  // Canonical rewards, statistics and entitlements are server-written only.
+  match /users/{uid}/{collection}/{id} {
+   allow read: if owner(uid) && collection in ['receipts','stats','subjectStats','inventory','unlocks','challenges','rejectedCompletions','wallet','boosts','boostHistory','operations','consumptions'];
+  }
+  match /{document=**} { allow read, write: if false; }
+ }
+}
