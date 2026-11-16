@@ -53,13 +53,3 @@ Meglévő emulátoros telepítésnél az `adb install -r` és `adb shell am inst
 A kiadási APK aláíratlan, amíg nincs kiadási kulcs beállítva. A fejlesztői APK közvetlenül telepíthető. A régebbi üveghatású navigáció tesztjei már felváltott terveket írnak le; nem részei a jelenlegi navigáció regressziós tesztkörének.
 
 A legutóbbi felirat- és némítási módosítás fejlesztői fordítása, lintellenőrzése és helyi egységtesztjei sikeresek voltak. Az APK-t telepítettük és elindítottuk az API 37-es emulátoron. A három elemzési feliratot külön egységteszt ellenőrzi. A korábbi Firebase-, bolt- és navigációs tesztek sikere nem jelenti az új némítás teljes rendszeres ellenőrzését.
-
-## A történelmi magyarázatok forrásai
-
-A kérdések magyarázatai az alábbi források alapján készült önálló összefoglalók:
-
-- [Magyarország története](https://history.state.gov/countries/hungary): Trianon és Nagy Imre semlegességi nyilatkozata.
-- [A NATO megalakulása](https://history.state.gov/milestones/1945-1952/nato): Marshall-terv, NATO és hidegháborús háttér.
-- [A berlini légihíd](https://history.state.gov/milestones/1945-1952/berlin-airlift): berlini blokád és légihíd.
-- [A NATO rövid története](https://www.nato.int/en/about-us/nato-history/a-short-history-of-nato): INF-szerződés és berlini fal.
-- [Magyarország és a NATO](https://nato.int/en/about-us/nato-history/history-by-theme/my-country-and-nato/hungary-and-nato): Kádár-korszak és páneurópai piknik.
