@@ -20,15 +20,10 @@ A projekt az ingyenes **Spark csomagon** marad. Az e-mailes/jelszavas és Google
 
 A Cloud Functions és Cloud Storage kódja elkészült, helyi emulátorokon teszteltük, de a jelenlegi csomagon nem telepíthető élesbe. A képek ezért helyileg várnak feltöltésre. A felhasználónévvel történő belépés, szerveres jutalomjóváhagyás, vásárlás, tárgyaktiválás, ütemezett szériavédelem és teljes fióktörlés a szerveroldali rendszer későbbi telepítését igényli. A Firestore ettől függetlenül menti a tanulási előzményeket, jegyzeteket, beállításokat és függő eredményigényeket. A teljes felhős rendszer tehát még nem érhető el élesben.
 
-## Tanulási napló, Potion és elemzés
+## Tanulási napló, Potion 
 
 A füzetkártya neve **Tanulási napló**; külön „Folytatás” felirat nincs rajta. A **Dupla XP Potion** belső azonosítója továbbra is `xp_potion`, hatása 30 percig tart. Az üvegcse grafikáján nincs szöveg. A korábban mentett vásárlások változatlanok.
 
-Az elemzés felirata a mentett tananyagot követi:
-
-- Képnél: **AI kép elemzés**.
-- Szövegnél: **AI szöveg elemzés**.
-- Mindkettőnél: **AI kép- és szövegelemzés**.
 
 Az elemzés tényleges működése továbbra is a meglévő, 26 másodperces helyi folyamat és tízkérdéses történelem-gyakorlatsor. Valódi AI-szolgáltatás nincs bekötve; jelenleg minden tantárgy ezt a kérdéssort használja.
 
